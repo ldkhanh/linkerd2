@@ -1,0 +1,37 @@
+#!/usr/bin/env sh
+#
+set -eu
+
+# Creates the root and issuer (intermediary) self-signed certificates for the control plane using openssl.
+#
+# Note this is much easier with the `step` CLI through just two commands:
+#
+# step certificate create identity.linkerd.cluster.local ca.crt ca.key --profile root-ca --no-password --insecure --san identity.linkerd.cluster.local
+#
+# step certificate create identity.linkerd.cluster.local issuer.crt issuer.key --ca ca.crt --ca-key ca.key --profile intermediate-ca --not-after 8760h --no-password --insecure --san identity.linkerd.cluster.local
+#
+
+# Generate CA config
+cat > ca.cnf << EOF
+[ req ]
+distinguished_name=dn
+prompt = no
+[ ext ]
+basicConstraints = CA:TRUE
+keyUsage = digitalSignature, keyCertSign, cRLSign
+[ dn ]
+CN = identity.linkerd.cluster.local
+EOF
+
+# Generate CA key
+openssl ecparam -out ca.key -name prime256v1 -genkey -noout
+
+# Generate CA cert
+openssl req -key ca.key -new -x509 -days 7300 -sha256 -out ca.crt -config ca.cnf -extensions ext
+
+# Generate the intermediate issuer key
+openssl ecparam -out issuer.key -name prime256v1 -genkey -noout
+
+# Generate the intermediate issuer csr and cert
+openssl req -new -sha256 -key issuer.key -out issuer.csr  -config ca.cnf
+openssl x509 -sha256 -req -in issuer.csr -out issuer.crt -CA ca.crt -CAkey ca.key -days 7300 -extfile ca.cnf -extensions ext -CAcreateserial
